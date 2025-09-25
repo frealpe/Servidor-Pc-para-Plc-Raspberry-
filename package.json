@@ -24,6 +24,7 @@
     "mongoose": "^6.3.6",
     "mqtt": "^5.14.1",
     "node-fetch": "^3.2.6",
+    "node-opcua": "^2.156.0",
     "nodemon": "^2.0.22",
     "uuid": "^8.3.2"
   }

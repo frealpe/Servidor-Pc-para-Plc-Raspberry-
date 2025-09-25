@@ -303,3 +303,5 @@ Referencia: [Industrial Shields OpenPLC](https://www.industrialshields.com/es_ES
 - [Python RPIPLC](https://github.com/Industrial-Shields/python3-librpiplc/releases)  
 - [Mosquitto MQTT](https://mosquitto.org/)  
 - [OpenPLC](https://github.com/thiagoralves/OpenPLC_v3)
+
+https://mathias.rocks/blog/2024-09-19-how-to-install-n8n-on-raspberry-pi
