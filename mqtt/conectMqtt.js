@@ -1,18 +1,20 @@
 const mqtt = require('mqtt');
 
-// Configuración del broker
-const brokerUrl = 'mqtt://localhost:1883';
-const options = {
-    username: 'plcuser',
-    password: 'plc',
-    clientId: 'NodeClient_' + Math.random().toString(16).substr(2, 8)
-};
+const { config } = require("dotenv");
 
+config();
+
+const brokerUrl = process.env.BROKER;
+const options = {
+  username: process.env.MQTT_USER,    // también desde .env
+  password: process.env.MQTT_PASS,    // también desde .env
+  clientId: "NodeClient_" + Math.random().toString(16).substr(2, 8),
+};
 // Conectar al broker
 const mqttClient = mqtt.connect(brokerUrl, options);
 
 // Lista de topics a suscribirse
-const topics = ['Plc/Adc', 'Plc/Ia', 'Plc/Pwm', 'Plc/Timer', 'Plc/Setpoint'];
+const topics = ['Plc/Adc','Plc/Ia','Plc/Pwm','Plc/Timer','Plc/Setpoint,','Plc/Control'];
 
 // Buffer para almacenar los últimos N mensajes por topic
 const MAX_MENSAJES = 1000;
@@ -22,7 +24,7 @@ mqttClient.on('connect', () => {
     console.log('Conectado al broker MQTT');
 
     // Suscribirse a todos los topics iniciales
-    topics.forEach(topic => {
+    topics.forEach(topic => { 
         mqttClient.subscribe(topic, { qos: 1 }, (err) => {
             if (!err) console.log(`Suscrito a ${topic}`);
             else console.error(`Error suscribiéndose a ${topic}:`, err);

@@ -1,4 +1,5 @@
 const { mqttClient, publicarMQTT, mensajesPorTopic } = require('../mqtt/conectMqtt');
+const { procesarPrompt } = require('./plcControllerAi');
 
 // Publicar un mensaje en un topic
 const publicarMensaje = (req, res) => {
@@ -7,6 +8,35 @@ const publicarMensaje = (req, res) => {
     publicarMQTT(topic, mensaje);
     res.json({ msg: `Mensaje publicado en ${topic}` });
 };
+
+// Publicar un mensaje en un topic
+// Publicar un mensaje en un topic
+const publicarMensajeIA = async (req, res) => {
+  try {
+    const { mensaje } = req.body;
+
+    const { comandos, ok } = await procesarPrompt(mensaje); 
+
+    console.log("Resultado de procesarPrompt:", comandos);
+
+    if (ok && comandos?.length) {
+      for (const cmd of comandos) {
+        console.log(`📤 Publicando en ${cmd.topic}: ${cmd.mensaje}`);
+        publicarMQTT(cmd.topic, cmd.mensaje);
+        console.log(`✅ Publicado en ${cmd.topic}: ${cmd.mensaje}`);
+      }
+      res.json({ msg: "✅ Mensajes publicados correctamente", comandos });
+    } else {
+      console.log("⚠️ No se generaron comandos válidos");
+      res.status(400).json({ msg: "⚠️ No se generaron comandos válidos", comandos });
+    }
+  } catch (error) {
+    console.error("❌ Error en publicarMensajeIA:", error); 
+    res.status(500).json({ error: "Error al publicar mensaje IA" });
+  }
+};
+
+
 
 // Suscribirse a un nuevo topic dinámicamente
 const suscribirseTopic = (req, res) => {
@@ -42,6 +72,7 @@ const leerMensajes = (req, res) => {
 
 module.exports = {
     publicarMensaje,
+    publicarMensajeIA,
     suscribirseTopic,
     obtenerTopics,
     leerMensajes

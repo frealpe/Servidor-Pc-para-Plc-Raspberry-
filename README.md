@@ -173,6 +173,7 @@ topic readwrite Plc/Ia
 topic readwrite Plc/Pwm
 topic readwrite Plc/Timer
 topic readwrite Plc/Setpoint
+topic readwrite Plc/Control
 ```
 
 Reiniciar servicio:

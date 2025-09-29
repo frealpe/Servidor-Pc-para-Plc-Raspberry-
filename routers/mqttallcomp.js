@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { check } = require('express-validator');
 const { validarCampos, validarJWT } = require('../middlewares');
-const { publicarMensaje, suscribirseTopic, obtenerTopics, leerMensajes } = require('../controllers/mqttallcomp');
+const { publicarMensaje, suscribirseTopic, obtenerTopics, leerMensajes,publicarMensajeIA } = require('../controllers/mqttallcomp');
 
 const router = Router();
 
@@ -17,7 +17,13 @@ router.post('/',
     ],
     publicarMensaje
 );
-
+//////////////////////////////////////////////////
+router.post('/ia',
+    [
+        validarCampos
+    ],
+    publicarMensajeIA
+);
 //////////////////////////////////////////////////
 // Suscribirse a un topic dinámicamente
 // POST /api/mqtt/subscribe

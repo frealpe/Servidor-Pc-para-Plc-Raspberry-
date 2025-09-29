@@ -4,9 +4,9 @@ class OpcServer {
     constructor() {
         this.adcValue = 0; // inicializamos el valor
         this.server = new OPCUAServer({
-            port: 4334,
-            resourcePath: "/Plc/PlcOpcServer",
-            hostname: "10.233.106.180",
+            port: parseInt(process.env.OPC_PORT, 10) || 4334,
+            resourcePath: process.env.OPC_PATH || "/Plc/PlcOpcServer",
+            hostname: process.env.OPC_HOST || "127.0.0.1",
             buildInfo: {
                 productName: "PlcServer",
                 buildNumber: "1",
