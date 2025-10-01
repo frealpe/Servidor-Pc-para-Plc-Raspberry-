@@ -28,6 +28,7 @@ Reglas:
   • El set-point siempre se expresa en voltios (0 a 10 V).
   • El tiempo de simulación debe expresarse en milisegundos (si el usuario da segundos, conviértelo a ms).
   • El tiempo de muestreo también en milisegundos (por defecto 1 ms).
+- Si la instrucción contiene "informe", "reporta", "genera reporte", "estadísticas" o "supervisión", el topic es "Plc/Supervisor".
 - Si no se reconoce, asignar topic "Plc/Otros".
 - El campo "mensaje" debe conservar el texto original de la instrucción.
 - Si hay varias instrucciones, devuelve un arreglo JSON.
@@ -45,6 +46,10 @@ Ejemplo de salida:
   {
     "topic": "Plc/Control",
     "mensaje": "Controla la planta con un set point de 5 V, simulación = 10000 ms, muestreo = 1 ms"
+  },
+  {
+    "topic": "Plc/Supervisor",
+    "mensaje": "Genera un reporte de la ultima simulación"
   }
 ]`,
         },
