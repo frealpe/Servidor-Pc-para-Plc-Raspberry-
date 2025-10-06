@@ -24,7 +24,7 @@ class OpcServer {
         namespace.addVariable({
             organizedBy: this.server.engine.addressSpace.rootFolder.objects,
             browseName: "ADC",
-            nodeId: "ns=1;s=ADC",
+            nodeId: "ns=1;s=ADC", 
             dataType: "Double",
             minimumSamplingInterval: 100, // cada 100ms
             value: {

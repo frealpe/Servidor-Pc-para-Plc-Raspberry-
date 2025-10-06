@@ -20,7 +20,7 @@ const topics = [
   'Plc/Pwm',
   'Plc/Timer',
   'Plc/Control',
-  'Plc/Supervisor',
+  'Plc/Supervisor', 
   'Plc/Respuesta'
 ];
 
@@ -40,7 +40,7 @@ mqttClient.on('connect', () => {
 });
 
 mqttClient.on('message', (topic, message) => {
-  const msg = message.toString();
+  const msg = message.toString();   
   //console.log(`📥 [${topic}] => ${msg}`);
 
   if (!mensajesPorTopic[topic]) mensajesPorTopic[topic] = [];

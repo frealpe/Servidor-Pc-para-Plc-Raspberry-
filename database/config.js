@@ -1,22 +1,23 @@
-const mongoose = require ('mongoose');
-/////////////////////////////////////////////////////
-const dbConnection = async() => {
-    try {
+require('dotenv').config();
+const { Pool } = require('pg');
 
-        await mongoose.connect(process.env.MONGODB_CNN,{
-            useNewUrlParser: true, useUnifiedTopology: true,
-        });
+const pool = new Pool({
+  host: process.env.PG_HOST,
+  port: parseInt(process.env.PG_PORT, 10) || 5432,
+  user: process.env.PG_USER,
+  password: process.env.PG_PASSWORD,
+  database: process.env.PG_DBNAME,
+  ssl: { rejectUnauthorized: false },
+});
 
-        console.log('Base de datos en linea');
-        
-    } catch (error) {
-        console.log(error);
-        throw new Error('Error de inicialización de base de datos');
-        
-    }
+pool.connect()
+  .then(client => {
+    console.log('📦 Base de datos PostgreSQL en línea');
+    client.release();
+  })
+  .catch(err => {
+    console.error('❌ Error de conexión a la BD:', err);
+  });
 
-}
-/////////////////////////////////////////////////////
-module.exports={
-    dbConnection
-}
+// Exportamos el pool, no lo redeclaramos en otro lado
+module.exports = { dbConnection: () => pool };

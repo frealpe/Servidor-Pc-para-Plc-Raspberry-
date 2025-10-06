@@ -12,6 +12,7 @@ const publicarMensaje = (req, res) => {
 // Publicar un mensaje en un topic
 // Publicar un mensaje en un topic
 const publicarMensajeIA = async (req, res) => {
+  //console.log(req);
   try {
     const { mensaje } = req.body;
 
