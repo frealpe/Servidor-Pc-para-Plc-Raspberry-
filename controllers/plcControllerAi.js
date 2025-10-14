@@ -1,38 +1,54 @@
 // controllers/chatgptplc.js
-const { gtpServices } = require('../services/gtpServices');
+const { gtpServiceUniversal } = require('../services/gtpServices');
 
-// ⚡ Procesa el prompt y enruta al PLC según el topic
 const procesarPrompt = async (prompt) => {
   try {
-    if (!prompt) {
+    if (!prompt?.trim()) {
       return { ok: false, msg: "El campo 'prompt' es obligatorio" };
     }
 
-    console.log("📥 Prompt recibido:", prompt);
+    // 🚀 Llamada al servicio GPT universal
+    const respuestaIA = await gtpServiceUniversal(prompt);
 
-    // GPT devuelve un string con formato JSON
-    const comandoStr = await gtpServices(prompt);
+    // 🧠 Estructura base de la salida
+    const salida = {
+      ok: true,
+      conversacion: respuestaIA.conversacion || [],
+      tipo: "Desconocido",
+    };
 
-    let comandos;
-    try {
-      comandos = JSON.parse(comandoStr); // ✅ Intentar parsear
-    } catch (err) {
-      console.error("❌ Error al parsear JSON:", err.message);
-      return { ok: false, msg: "❌ Error al parsear JSON de GPT", raw: comandoStr };
+    // ⚙️ Caso 1: SQL detectado
+    if (respuestaIA.sql) {
+      return {
+        ...salida,
+        tipo: "Sql",
+        resultado: [{ sql: respuestaIA.sql }],
+      };
     }
 
-    // Asegurar que sea un array
-    if (!Array.isArray(comandos)) {
-      comandos = [comandos];
+    // ⚙️ Caso 2: Comandos PLC detectados
+    if (Array.isArray(respuestaIA.resultado) && respuestaIA.resultado.length > 0) {
+      return {
+        ...salida,
+        tipo: "Plc",
+        resultado: respuestaIA.resultado,
+      };
     }
 
-    return { ok: true, comandos };
+    // ⚙️ Caso 3: Sin tipo reconocible
+    return {
+      ...salida,
+      msg: "No se detectó ni consulta SQL ni comando PLC.",
+    };
+
   } catch (error) {
-    console.error("Error en procesarPrompt:", error.message);
-    return { ok: false, msg: "Error al procesar la consulta con GPT", error: error.message };
+    console.error("❌ Error en procesarPrompt:", error);
+    return {
+      ok: false,
+      msg: "Error al procesar el prompt con GPT",
+      error: error.message,
+    };
   }
 };
-
-
 
 module.exports = { procesarPrompt };

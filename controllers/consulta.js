@@ -1,12 +1,12 @@
 const { dbConnection } = require("../database/config");
-const { gtpServiceSql } = require("../services/gtpServices");
+const { gtpServiceUniversal } = require("../services/gtpServices");
 
 const consultaIA = async (req, res) => {
   try {
     const { prompt } = req.body;
 
     // 1️⃣ Generar la consulta SQL con GPT
-    const comandos = await gtpServiceSql(prompt);
+    const comandos = await gtpServiceUniversal(prompt);
 
     const pool = dbConnection();
     const result = await pool.query(comandos);

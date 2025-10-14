@@ -1,42 +1,139 @@
 const { mqttClient, publicarMQTT, mensajesPorTopic } = require('../mqtt/conectMqtt');
 const { procesarPrompt } = require('./plcControllerAi');
-
+const { dbConnection } = require("../database/config");
 // Publicar un mensaje en un topic
 const publicarMensaje = (req, res) => {
     const { topic, mensaje } = req.body;
-    console.log(`Publicando en ${topic}: ${mensaje}`);
+    // console.log(`Publicando en ${topic}: ${mensaje}`);
     publicarMQTT(topic, mensaje);
     res.json({ msg: `Mensaje publicado en ${topic}` });
 };
 
 // Publicar un mensaje en un topic
 // Publicar un mensaje en un topic
+// controllers/mqttallcomp.js
 const publicarMensajeIA = async (req, res) => {
-  //console.log(req);
   try {
     const { mensaje } = req.body;
 
-    const { comandos, ok } = await procesarPrompt(mensaje); 
-
-    console.log("Resultado de procesarPrompt:", comandos);
-
-    if (ok && comandos?.length) {
-      for (const cmd of comandos) {
-        console.log(`📤 Publicando en ${cmd.topic}: ${cmd.mensaje}`);
-        publicarMQTT(cmd.topic, cmd.mensaje);
-        console.log(`✅ Publicado en ${cmd.topic}: ${cmd.mensaje}`);
-      }
-      res.json({ msg: "✅ Mensajes publicados correctamente", comandos });
-    } else {
-      console.log("⚠️ No se generaron comandos válidos");
-      res.status(400).json({ msg: "⚠️ No se generaron comandos válidos", comandos });
+    // ✅ Validación de entrada
+    if (!mensaje?.trim()) {
+      return res.status(400).json({ error: "El campo 'mensaje' es obligatorio" });
     }
+
+    // 🧠 Procesar prompt con IA
+    const { ok, conversacion, tipo, resultado } = await procesarPrompt(mensaje);
+    if (!ok) {
+      return res.status(400).json({ error: "Error al procesar el prompt con IA" });
+    }
+
+    // ======================================================
+    // 🧩 CASO SQL → Ejecutar consulta en PostgreSQL
+    // ======================================================
+    if (tipo === "Sql") {
+      const query = resultado?.[0]?.sql;
+      if (!query) {
+        return res.status(400).json({
+          ok: false,
+          tipo: "Sql",
+          error: "No se encontró una consulta SQL válida.",
+        });
+      }
+
+      try {
+        const pool = await dbConnection();
+        const result = await pool.query(query);
+
+        // 🔹 Extraer solo los datos limpios
+        const data = result.rows?.length === 1
+          ? result.rows[0]
+          : result.rows;
+
+        console.log("✅ Consulta SQL ejecutada:", query);
+        // console.log("📊 Resultado limpio:", data);
+
+        return res.json({
+          ok: true,
+          tipo: "Sql",
+          conversacion,
+          query,
+          filas: result.rowCount,
+          resultado: data, // 🔹 Solo los datos relevantes
+        });
+      } catch (sqlErr) {
+        console.error("❌ Error ejecutando SQL:", sqlErr);
+        return res.status(500).json({
+          ok: false,
+          tipo: "Sql",
+          error: sqlErr.message,
+        });
+      }
+    }
+
+    // ======================================================
+    // 🧩 CASO PLC → Publicar mensaje MQTT
+    // ======================================================
+    if (tipo === "Plc") {
+      if (!Array.isArray(resultado) || resultado.length === 0) {
+        return res.status(400).json({
+          ok: false,
+          tipo: "Plc",
+          error: "No se encontró contenido válido en resultado para PLC.",
+        });
+      }
+
+      for (const { topic, mensaje: msgPLC } of resultado) {
+        if (!topic || !msgPLC) continue;
+
+        try {
+          // Intentar convertir el mensaje a JSON
+          let payload;
+          try {
+            payload = JSON.stringify(JSON.parse(msgPLC));
+          } catch {
+            payload = msgPLC.toString();
+          }
+
+          // Publicar en MQTT
+          mqttClient.publish(topic, payload, { qos: 1 }, (err) => {
+            if (err) console.error(`❌ Error publicando en ${topic}:`, err.message);
+            else console.log(`📡 Publicado en ${topic}:`, payload);
+          });
+        } catch (pubErr) {
+          console.error("❌ Error durante publicación MQTT:", pubErr);
+        }
+      }
+
+      // ✅ Respuesta limpia
+      return res.json({
+        ok: true,
+        tipo: "Plc",
+        conversacion,
+        resultado,
+      });
+    }
+
+    // ======================================================
+    // 🧩 CASO DESCONOCIDO
+    // ======================================================
+    return res.json({
+      ok: true,
+      tipo: "Desconocido",
+      conversacion,
+    });
+
   } catch (error) {
-    console.error("❌ Error en publicarMensajeIA:", error); 
-    res.status(500).json({ error: "Error al publicar mensaje IA" });
+    console.error("❌ Error en publicarMensajeIA:", error);
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        ok: false,
+        error: "Error interno al publicar mensaje IA",
+        detalle: error.message,
+      });
+    }
   }
 };
-
 
 
 // Suscribirse a un nuevo topic dinámicamente

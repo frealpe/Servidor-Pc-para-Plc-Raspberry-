@@ -20,6 +20,7 @@ const topics = [
   'Plc/Pwm',
   'Plc/Timer',
   'Plc/Control',
+  'Plc/Caracterizacion',
   'Plc/Supervisor', 
   'Plc/Respuesta'
 ];
