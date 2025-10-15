@@ -9,20 +9,28 @@ const procesarPrompt = async (prompt) => {
 
     // 🚀 Llamada al servicio GPT universal
     const respuestaIA = await gtpServiceUniversal(prompt);
+    console.log("Respuesta IA cruda:", respuestaIA);
 
-    // 🧠 Estructura base de la salida
+    // 🧠 Estructura base
     const salida = {
       ok: true,
       conversacion: respuestaIA.conversacion || [],
-      tipo: "Desconocido",
+      tipo: respuestaIA.tipo || "Desconocido",
     };
 
     // ⚙️ Caso 1: SQL detectado
-    if (respuestaIA.sql) {
+    if (respuestaIA.tipo === "Sql") {
+      const resultado =
+        Array.isArray(respuestaIA.resultado) && respuestaIA.resultado.length > 0
+          ? respuestaIA.resultado
+          : respuestaIA.sql
+          ? [{ sql: respuestaIA.sql }]
+          : [];
+
       return {
         ...salida,
         tipo: "Sql",
-        resultado: [{ sql: respuestaIA.sql }],
+        resultado,
       };
     }
 
@@ -35,7 +43,7 @@ const procesarPrompt = async (prompt) => {
       };
     }
 
-    // ⚙️ Caso 3: Sin tipo reconocible
+    // ⚙️ Caso 3: Desconocido
     return {
       ...salida,
       msg: "No se detectó ni consulta SQL ni comando PLC.",

@@ -1,6 +1,7 @@
 const { mqttClient, publicarMQTT, mensajesPorTopic } = require('../mqtt/conectMqtt');
 const { procesarPrompt } = require('./plcControllerAi');
 const { dbConnection } = require("../database/config");
+const { constructEventFilter } = require('node-opcua');
 // Publicar un mensaje en un topic
 const publicarMensaje = (req, res) => {
     const { topic, mensaje } = req.body;
@@ -16,62 +17,88 @@ const publicarMensajeIA = async (req, res) => {
   try {
     const { mensaje } = req.body;
 
-    // ✅ Validación de entrada
+    // ✅ Validación
     if (!mensaje?.trim()) {
       return res.status(400).json({ error: "El campo 'mensaje' es obligatorio" });
     }
 
-    // 🧠 Procesar prompt con IA
+    // 🧠 Procesamiento con IA
     const { ok, conversacion, tipo, resultado } = await procesarPrompt(mensaje);
     if (!ok) {
       return res.status(400).json({ error: "Error al procesar el prompt con IA" });
     }
 
-    // ======================================================
-    // 🧩 CASO SQL → Ejecutar consulta en PostgreSQL
-    // ======================================================
-    if (tipo === "Sql") {
-      const query = resultado?.[0]?.sql;
-      if (!query) {
-        return res.status(400).json({
-          ok: false,
-          tipo: "Sql",
-          error: "No se encontró una consulta SQL válida.",
-        });
-      }
-
-      try {
-        const pool = await dbConnection();
-        const result = await pool.query(query);
-
-        // 🔹 Extraer solo los datos limpios
-        const data = result.rows?.length === 1
-          ? result.rows[0]
-          : result.rows;
-
-        console.log("✅ Consulta SQL ejecutada:", query);
-        // console.log("📊 Resultado limpio:", data);
-
-        return res.json({
-          ok: true,
-          tipo: "Sql",
-          conversacion,
-          query,
-          filas: result.rowCount,
-          resultado: data, // 🔹 Solo los datos relevantes
-        });
-      } catch (sqlErr) {
-        console.error("❌ Error ejecutando SQL:", sqlErr);
-        return res.status(500).json({
-          ok: false,
-          tipo: "Sql",
-          error: sqlErr.message,
-        });
-      }
-    }
+    console.log("Define el Tipo ", tipo);
+    console.log("Resultado IA:", resultado);
 
     // ======================================================
-    // 🧩 CASO PLC → Publicar mensaje MQTT
+    // 🧩 CASO SQL
+    // ======================================================
+// ======================================================
+// 🧩 CASO SQL (una o varias consultas)
+// ======================================================
+if (tipo === "Sql") {
+  if (!Array.isArray(resultado) || resultado.length === 0) {
+    return res.status(400).json({
+      ok: false,
+      tipo: "Sql",
+      error: "No se encontró una consulta SQL válida.",
+    });
+  }
+
+  try {
+    const pool = await dbConnection();
+
+    // Ejecutar todas las consultas en paralelo
+    const resultadosSQL = await Promise.all(
+      resultado.map(async (item) => {
+        const query = item.sql;
+        const nombre = item.prueba || "consulta";
+        if (!query) return { nombre, error: "Consulta SQL vacía" };
+
+        try {
+          const resQuery = await pool.query(query);
+          console.log(`✅ Ejecutado ${nombre}:`, query);
+          return {
+            nombre,
+            query,
+            filas: resQuery.rowCount,
+            datos: resQuery.rows || [],
+          };
+        } catch (err) {
+          console.error(`❌ Error ejecutando ${nombre}:`, err.message);
+          return {
+            nombre,
+            query,
+            error: err.message,
+            datos: [],
+          };
+        }
+      })
+    );
+
+    // Respuesta final con todos los resultados
+    return res.json({
+      ok: true,
+      tipo: "Sql",
+      conversacion,
+      resultado: {
+        totalConsultas: resultadosSQL.length,
+        resultados: resultadosSQL,
+      },
+    });
+  } catch (sqlErr) {
+    console.error("❌ Error ejecutando SQL:", sqlErr);
+    return res.status(500).json({
+      ok: false,
+      tipo: "Sql",
+      error: sqlErr.message,
+    });
+  }
+}
+
+    // ======================================================
+    // 🧩 CASO PLC
     // ======================================================
     if (tipo === "Plc") {
       if (!Array.isArray(resultado) || resultado.length === 0) {
@@ -82,34 +109,35 @@ const publicarMensajeIA = async (req, res) => {
         });
       }
 
-      for (const { topic, mensaje: msgPLC } of resultado) {
-        if (!topic || !msgPLC) continue;
-
+      const datosNormalizados = resultado.map(({ topic, mensaje: msgPLC }) => {
+        let payload;
         try {
-          // Intentar convertir el mensaje a JSON
-          let payload;
-          try {
-            payload = JSON.stringify(JSON.parse(msgPLC));
-          } catch {
-            payload = msgPLC.toString();
-          }
+          payload = JSON.parse(msgPLC);
+        } catch {
+          payload = msgPLC;
+        }
 
-          // Publicar en MQTT
-          mqttClient.publish(topic, payload, { qos: 1 }, (err) => {
+        // Publicación MQTT
+        if (topic && msgPLC) {
+          mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 }, (err) => {
             if (err) console.error(`❌ Error publicando en ${topic}:`, err.message);
             else console.log(`📡 Publicado en ${topic}:`, payload);
           });
-        } catch (pubErr) {
-          console.error("❌ Error durante publicación MQTT:", pubErr);
         }
-      }
 
-      // ✅ Respuesta limpia
+        return { topic, mensaje: payload };
+      });
+
       return res.json({
         ok: true,
         tipo: "Plc",
         conversacion,
-        resultado,
+        resultado: {
+          datos: datosNormalizados,
+          resumen: {
+            total: datosNormalizados.length,
+          },
+        },
       });
     }
 
@@ -120,11 +148,14 @@ const publicarMensajeIA = async (req, res) => {
       ok: true,
       tipo: "Desconocido",
       conversacion,
+      resultado: {
+        datos: [],
+        resumen: { nota: "Tipo de mensaje no reconocido" },
+      },
     });
 
   } catch (error) {
     console.error("❌ Error en publicarMensajeIA:", error);
-
     if (!res.headersSent) {
       return res.status(500).json({
         ok: false,

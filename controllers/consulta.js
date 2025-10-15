@@ -7,7 +7,7 @@ const consultaIA = async (req, res) => {
 
     // 1️⃣ Generar la consulta SQL con GPT
     const comandos = await gtpServiceUniversal(prompt);
-
+    console.log("🧠 Consulta SQL generada por IA:", comandos);
     const pool = dbConnection();
     const result = await pool.query(comandos);
 
