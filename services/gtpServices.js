@@ -12,9 +12,17 @@ let historialConversacion = [];
 
 const gtpServiceUniversal = async (prompt) => {
   try {
-    // ✅ Detección inteligente: SQL vs PLC
+    const promptLower = prompt.toLowerCase();
+
+    // ✅ Nuevo: detección de identificación de modelo
+    const esIdentificacion =
+      /\b(identifica|identificación|modelo\s*de\s*la\s*planta|identificar\s*modelo|determina\s*modelo)\b/.test(
+        promptLower
+      );
+
+    // ✅ Detección SQL vs PLC (solo si no es identificación)
     const esSQL = (() => {
-      const promptLower = prompt.toLowerCase();
+      if (esIdentificacion) return true; // Fuerza a tratarlo como SQL
 
       // Palabras clave típicas de consulta SQL
       const esConsulta =
@@ -61,7 +69,7 @@ Reglas:
    {
      "conversacion": "<explicación amable y detallada>",
      "resultado": [
-       { "sql": "<consulta SQL limpia y ejecutable>", "prueba": "<caracterizacion o datalogger>" }
+       { "sql": "<consulta SQL limpia y ejecutable>", "prueba": "<caracterizacion o datalogger o identificacion>" }
      ]
    }
 2. Si el usuario pide conteos, usa COUNT(prueba).
@@ -70,7 +78,8 @@ Reglas:
    SELECT * FROM datalogger ORDER BY prueba DESC LIMIT 1;
 5. Si pide la última caracterización, usa:
    SELECT * FROM caracterizacion ORDER BY prueba DESC LIMIT 1;
-6. No agregues texto fuera del JSON.
+6. Si el usuario solicita identificar o determinar el modelo de la planta a partir de un id, genera una consulta a la tabla 'caracterizacion' filtrando por el id correspondiente.
+7. No agregues texto fuera del JSON.
 7. Usa un tono amable en "conversacion".
 `
       : `
@@ -90,8 +99,7 @@ Reglas:
 - Si contiene "salida" o "Q", usa "Plc/Ia".
 - Si contiene "control", "planta" o "simulación", usa "Plc/Control".
 - Si contiene "informe" o "reporte", usa "Plc/Supervisor".
-- Si contiene "caracterizacion" o "llevar", usa "Plc/Caracterizacion" y genera un solo mensaje JSON que describa toda la secuencia de pasos (por ejemplo, porcentajes y duraciones).
-- No dividas la instrucción en varios mensajes. Debe ser un bloque único que resuma toda la caracterización.
+- Si contiene "caracterizacion" o "llevar", usa "Plc/Caracterizacion" y genera un solo mensaje JSON que describa toda la secuencia de pasos.
 - Si no se reconoce, usa "Plc/Otros".
 `;
 
@@ -131,7 +139,11 @@ Reglas:
     }
 
     // 🔖 Añadir tipo de respuesta
-    json.tipo = esSQL ? "Sql" : "Plc";
+    if (esIdentificacion) {
+      json.tipo = "Identificacion";
+    } else {
+      json.tipo = esSQL ? "Sql" : "Plc";
+    }
 
     // 🧩 Guardar en historial
     historialConversacion.push({ role: "user", content: prompt });
