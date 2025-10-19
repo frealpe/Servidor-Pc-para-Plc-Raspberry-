@@ -1,8 +1,6 @@
 const { mqttClient, publicarMQTT, mensajesPorTopic } = require('../mqtt/conectMqtt');
 const { procesarPrompt, procesarPromptControlador } = require('./plcControllerAi');
 const { dbConnection } = require("../database/config");
-const Sockets = require("../lib/socket");
-
 // Publicar un mensaje en un topic
 const publicarMensaje = (req, res) => {
     const { topic, mensaje } = req.body;
@@ -30,98 +28,6 @@ const publicarMensajeIA = async (req, res) => {
     console.log("Define el Tipo ", tipo);
     console.log("Resultado IA:", resultado);
 
-// ======================================================
-// 🧩 CASO IDENTIFICACION
-// ======================================================
-   if (tipo === "Identificacion") {
-      try {
-        if (!Array.isArray(resultado) || resultado.length === 0 || !resultado[0]?.sql) {
-          return res.status(400).json({
-            ok: false,
-            tipo: "Identificacion",
-            error: "No se encontró una consulta SQL válida en la respuesta de la IA.",
-          });
-        }
-
-        const query = resultado[0].sql;
-        console.log("🧩 Ejecutando consulta de identificación:", query);
-
-        const resQuery = await pool.query(query);
-
-        if (resQuery.rowCount === 0) {
-          return res.status(404).json({
-            ok: false,
-            tipo: "Identificacion",
-            error: "No se encontró ningún registro para el criterio solicitado.",
-          });
-        }
-
-        const registro = resQuery.rows[0];
-        console.log("📄 Registro encontrado:", registro);
-
-        const data = registro.resultado;
-        if (!Array.isArray(data)) {
-          return res.status(400).json({
-            ok: false,
-            tipo: "Identificacion",
-            error: "El campo 'resultado' no contiene un array válido.",
-          });
-        }
-
-        console.log("📦 Datos enviados a IA Control:", data);
-
-        // 🤖 Procesar el mensaje con la IA para identificación del modelo
-        const {ok,tipo,conversacionid} = await procesarPromptControlador({
-          data,
-          mensaje: "Identifica el modelo de la planta con estos datos.",
-          conversacion,
-        });
-
-        if (!ok) {
-          return res.status(500).json({
-            ok: false,
-            tipo: tipo,
-            error: resultadoControl.error || "Error al procesar la identificación del modelo.",
-          });
-        }
-// 🟢 Ejecutar el modelo IA generado
-          try {
-            const { modeloIdentificado } = await import('../services/modelo.js');
-            const salida = modeloIdentificado();
-            const sockets = req.app.locals.sockets;
-            salida.slice(0,100).forEach((valor, k) => {
-              console.log(`🔵 Enviando valor ${k}:`, valor);
-              sockets.enviarMensaje('adcPlc', {
-                canal: 0,
-                conversion: valor,
-                tiempo: k
-              });
-            });
-
-            console.log("📈 Salida del modelo IA:", salida.slice(0, 1000), "...");
-          } catch (err) {
-            console.error("❌ Error al ejecutar modelo.js:", err);
-          }
-
-
-        console.log("✅ Identificación completada.");
-
-        return res.json({
-          ok: true,
-          tipo: "Identificacion",        
-          conversacion: conversacionid,
-        });
-
-      } catch (error) {
-        console.error("❌ Error durante la identificación:", error);
-        return res.status(500).json({
-          ok: false,
-          tipo: "Identificacion",
-          conversacion, // ✅ corregido: antes era 'conversacionc'
-          error: error.message || "Error interno al procesar la identificación.",
-        });
-      }
-    }
 
 // ======================================================
 // 🧩 CASO SQL (una o varias consultas)
@@ -198,24 +104,37 @@ if (tipo === "Sql") {
         });
       }
 
-      const datosNormalizados = resultado.map(({ topic, mensaje: msgPLC }) => {
-        let payload;
-        try {
-          payload = JSON.parse(msgPLC);
-        } catch {
-          payload = msgPLC;
-        }
+        const datosNormalizados = resultado.map(({ topic, mensaje: msgPLC, orden, sql}) => {
+          let payload;
 
-        // Publicación MQTT
-        if (topic && msgPLC) {
-          mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 }, (err) => {
-            if (err) console.error(`❌ Error publicando en ${topic}:`, err.message);
-            else console.log(`📡 Publicado en ${topic}:`, payload);
-          });
-        }
+          try {
+            payload = JSON.parse(msgPLC);
+          } catch {
+            payload = msgPLC;
+          }
 
-        return { topic, mensaje: payload };
-      });
+          // 🧩 Si el tópico es 'Plc/Identificacion', agregamos el campo 'orden' al mensaje
+          if (topic === "Plc/Identificacion") {
+            if (typeof payload === "string") {
+              // Si el mensaje es texto plano (como una consulta SQL)
+              payload = {consulta: payload, orden: orden ?? 1 };
+            } else if (typeof payload === "object" && payload !== null) {
+              // Si ya es un objeto JSON
+              payload.orden = orden ?? 1;
+            }
+          }
+
+          // 📡 Publicación MQTT
+          if (topic && msgPLC) {
+            mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 }, (err) => {
+              if (err) console.error(`❌ Error publicando en ${topic}:`, err.message);
+              else console.log(`📡 Publicado en ${topic}:`, payload);
+            });
+          }
+
+          return { topic, mensaje: payload };
+        });
+
 
       return res.json({
         ok: true,

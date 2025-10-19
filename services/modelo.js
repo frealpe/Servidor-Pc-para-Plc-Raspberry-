@@ -1,19 +1,16 @@
 const coeficientes = {
-  a1: -1.561,
-  a2: 0.607,
-  b0: 0.00108,
-  b1: 0.00102
+  a1: 1.566,
+  a2: -0.670,
+  b1: 0.000838,
+  b2: 0.000749
 };
 
 export function modeloPlanta(u) {
   const N = u.length;
   const y = Array(N).fill(0);
-  for (let k = 0; k < N; k++) {
-    const uk = u[k] ?? 0;
-    const uk1 = u[k - 1] ?? 0;
-    const yk1 = y[k - 1] ?? 0;
-    const yk2 = y[k - 2] ?? 0;
-    y[k] = -coeficientes.a1 * yk1 - coeficientes.a2 * yk2 + coeficientes.b0 * uk + coeficientes.b1 * uk1;
+  for (let k = 2; k < N; ++k) {
+    y[k] = coeficientes.a1 * y[k - 1] + coeficientes.a2 * y[k - 2]
+         + coeficientes.b1 * u[k - 1] + coeficientes.b2 * u[k - 2];
   }
   return y;
 }

@@ -23,26 +23,8 @@ const procesarPrompt = async (prompt) => {
     const salida = {
       ok: true,
       tipo: respuestaIA.tipo || "Desconocido",
-      conversacion: respuestaIA.conversacion || [],
+      conversacion: respuestaIA.conversacion || [], 
     };
-
-    // ⚙️ Caso 1: Identificación de modelo
-    if (respuestaIA.tipo === "Identificacion") {
-      console.log("🧩 Caso Identificacion detectado → identificarModeloIA()");
-      const resultado =
-        Array.isArray(respuestaIA.resultado) && respuestaIA.resultado.length > 0
-          ? respuestaIA.resultado
-          : respuestaIA.sql
-          ? [{ sql: respuestaIA.sql }]
-          : [];
-
-      return {
-        ...salida,
-        tipo: "Identificacion",
-        resultado,
-        msg: "Consulta SQL generada para identificación de modelo.",
-      };
-    }
 
     // ⚙️ Caso 2: SQL detectado
     if (respuestaIA.tipo === "Sql") {
@@ -54,7 +36,7 @@ const procesarPrompt = async (prompt) => {
           : [];
 
       return {
-        ...salida,
+        ...salida, 
         tipo: "Sql",
         resultado,
         msg: "Consulta SQL detectada correctamente.",

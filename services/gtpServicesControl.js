@@ -33,6 +33,7 @@ Devuelve únicamente un archivo JavaScript compatible con ES Modules que:
 5️⃣ No uses 'module.exports' ni 'export default'.
 6️⃣ No agregues comentarios ni texto adicional fuera del código.
 
+
 Datos experimentales (primeras muestras):
 ${textoDatos}
 `;
