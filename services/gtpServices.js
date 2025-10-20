@@ -25,7 +25,7 @@ const gtpServiceUniversal = async (prompt) => {
 
     const promptLower = prompt.toLowerCase();
 
-    // 🧩 1. Detección de intención: Identificación, SQL o PLC
+    // 🧩 1. Detección de intención
     const esIdentificacion = /\b(identifica|identificación|modelo\s*de\s*la\s*planta|identificar\s*modelo|determina\s*modelo)\b/.test(promptLower);
 
     const esSQL = (() => {
@@ -34,16 +34,15 @@ const gtpServiceUniversal = async (prompt) => {
       const esConsulta = /\b(select|from|where|consulta|consultar|promedio|filtra|voltaje|error|tiempo|jsonb|datalogger|base\s*de\s*datos|conteo|cuenta|cuántas|cuantos|total|registros|prueba|pruebas|última|ultima|reciente|muestra|dame|ver|listar|enséñame|muéstrame)\b/.test(promptLower);
       const esComandoPLC = /\b(control|controla|planta|simulacion|simulación|set\s*point|muestreo|adc|canal|salida|q\d?|ejecuta|realiza|lleva|inicia|empieza|arranca|haz|corre|realizar)\b/.test(promptLower);
 
-      // Casos especiales: "caracterización"
       if (promptLower.includes("caracterizacion") || promptLower.includes("caracterización")) {
-        if (/\b(dame|muestra|ver|listar|enséñame|última|ultima|reciente)\b/.test(promptLower)) return true; // SQL
-        if (/\b(ejecuta|realiza|lleva|inicia|empieza|arranca|haz|corre|realizar)\b/.test(promptLower)) return false; // PLC
+        if (/\b(dame|muestra|ver|listar|enséñame|última|ultima|reciente)\b/.test(promptLower)) return true;
+        if (/\b(ejecuta|realiza|lleva|inicia|empieza|arranca|haz|corre|realizar)\b/.test(promptLower)) return false;
       }
 
       return esConsulta && !esComandoPLC;
     })();
 
-    // 🧠 2. Prompt del sistema con instrucciones detalladas
+    // 🧠 2. Prompt del sistema (lo que tú mencionaste)
     const systemPrompt = `
 {
   "modo": "inteligente",
@@ -83,7 +82,7 @@ const gtpServiceUniversal = async (prompt) => {
       "Si contiene 'salida' o 'Q', usa topic = 'Plc/Ia'.",
       "Si contiene 'control', 'planta' o 'simulación', usa topic = 'Plc/Control'.",
       "Si contiene 'informe' o 'reporte', usa topic = 'Plc/Supervisor'.",
-      "Si contiene 'caracterizacion' o 'llevar', usa topic = 'Plc/Caracterizacion' con secuencia JSON detallada.",
+      "Si contiene 'caracterizacion' o 'llevar', usa topic = 'Plc/Caracterizacion'",
       "Si contiene 'identifica' o 'modelo', usa topic = 'Plc/Identificacion'.",
       "Si no se reconoce el tipo, usa topic = 'Plc/Otros'."
     ]
@@ -91,7 +90,7 @@ const gtpServiceUniversal = async (prompt) => {
 }
 `;
 
-    // 🧩 3. Construir mensajes con historial (mantener contexto conversacional)
+    // 🧩 3. Construir mensajes con historial
     const mensajes = [
       { role: "system", content: systemPrompt },
       ...historialConversacion,
@@ -106,11 +105,9 @@ const gtpServiceUniversal = async (prompt) => {
       max_tokens: 500,
     });
 
-    // 🧹 5. Limpieza y validación del contenido
+    // 🧹 5. Validar salida
     let content = completion.choices[0]?.message?.content?.trim() || "";
-    if (content.startsWith("```")) {
-      content = content.replace(/```(json)?/g, "").trim();
-    }
+    if (content.startsWith("```")) content = content.replace(/```(json)?/g, "").trim();
 
     let json;
     try {
@@ -118,52 +115,59 @@ const gtpServiceUniversal = async (prompt) => {
     } catch {
       console.warn("⚠️ GPT no devolvió JSON válido. Aplicando estructura fallback.");
       json = esSQL
-        ? {
-            conversacion: "No se pudo generar una consulta SQL válida.",
-            resultado: [{ sql: "", prueba: "desconocida" }],
-          }
-        : {
-            conversacion: "No se pudo interpretar la instrucción para el PLC.",
-            resultado: [{ topic: "Plc/Otros", mensaje: prompt }],
-          };
+        ? { conversacion: "No se pudo generar una consulta SQL válida.", resultado: [{ sql: "", prueba: "desconocida" }] }
+        : { conversacion: "No se pudo interpretar la instrucción para el PLC.", resultado: [{ topic: "Plc/Otros", mensaje: prompt }] };
     }
 
-    // 🧩 6. Detectar orden del modelo
-    let orden = 1; // por defecto
+    // 🧩 6. Detección de parámetros
+    let orden = 1;
     const matchOrden = promptLower.match(/\borden\s*(\d+)/);
-    if (matchOrden) {
-      orden = parseInt(matchOrden[1]);
-      if (isNaN(orden) || orden <= 0) orden = 1;
+    if (matchOrden) orden = Math.max(parseInt(matchOrden[1]) || 1, 1);
+
+    let idCaracterizacion = null;
+    const matchId = promptLower.match(/\bid\s*(\d+)\b/);
+    if (matchId) idCaracterizacion = parseInt(matchId[1]);
+
+    let numeroExplicito = null;
+    const matchNumero = promptLower.match(/\b(número|numero)\s*(\d+)\b/);
+    if (matchNumero) numeroExplicito = parseInt(matchNumero[2]);
+
+    let indiceCaracterizacion = 1;
+    const matchIndice = promptLower.match(/\b(primer[ao]|segund[ao]|tercer[ao]|cuart[ao]|quint[ao]|sext[ao]|séptim[ao]|octav[ao]|noven[ao]|décim[ao])\b/);
+    if (matchIndice) {
+      const mapa = { primero:1, segunda:2, tercero:3, cuarta:4, quinta:5, sexta:6, séptima:7, septima:7, octava:8, novena:9, décima:10, decima:10 };
+      indiceCaracterizacion = mapa[matchIndice[0]] || 1;
     }
 
-    // 🔖 7. Tipo de respuesta detectado (corregido y extendido)
+    // 🔖 7. Respuesta PLC de identificación
     if (esIdentificacion) {
-      json.tipo = "Plc"; // ✅ Siempre PLC para identificación
+      json.tipo = "Plc";
+      let sqlQuery;
 
-      // Estructura coherente
-      const sqlQuery = "SELECT * FROM caracterizacion ORDER BY id ASC LIMIT 1;";
+      if (idCaracterizacion) {
+        sqlQuery = `SELECT * FROM caracterizacion WHERE id = ${idCaracterizacion};`;
+      } else if (numeroExplicito) {
+        sqlQuery = `SELECT * FROM caracterizacion WHERE id = ${numeroExplicito};`;
+      } else {
+        sqlQuery = `SELECT * FROM caracterizacion ORDER BY id ASC OFFSET ${indiceCaracterizacion - 1} LIMIT 1;`;
+      }
+
       json.resultado = [
-        {
-          topic: "Plc/Identificacion",
-          mensaje: sqlQuery,
-          orden, // ✅ incluir el orden del modelo
-        },
+        { topic: "Plc/Identificacion", mensaje: sqlQuery, orden, id: idCaracterizacion || numeroExplicito || null }
       ];
 
       json.conversacion =
-        json.conversacion ||
-        `Identificando la planta con la primera prueba registrada. Modelo de orden ${orden}.`;
-
+        idCaracterizacion || numeroExplicito
+          ? `Identificando la planta con la caracterización de id ${idCaracterizacion || numeroExplicito} (modelo de orden ${orden}).`
+          : `Identificando la planta con la ${indiceCaracterizacion}ª caracterización registrada (modelo de orden ${orden}).`;
     } else {
       json.tipo = esSQL ? "Sql" : "Plc";
     }
 
-    // 🧩 8. Actualizar historial (máximo 10 interacciones)
+    // 🧩 8. Actualizar historial
     historialConversacion.push({ role: "user", content: prompt });
     historialConversacion.push({ role: "assistant", content: JSON.stringify(json) });
-    if (historialConversacion.length > 10) {
-      historialConversacion = historialConversacion.slice(-10);
-    }
+    if (historialConversacion.length > 10) historialConversacion = historialConversacion.slice(-10);
 
     return json;
   } catch (error) {

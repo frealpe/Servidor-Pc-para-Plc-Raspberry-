@@ -76,52 +76,52 @@ const procesarPrompt = async (prompt) => {
 /**
  * 🤖 Procesa el prompt para controladores (IA Control)
  */
-const procesarPromptControlador = async ({ data, mensaje, conversacion = [] }) => {
-  try {
-    if (!data || !Array.isArray(data)) {
-      return {
-        ok: false,
-        tipo: "Identificacion",
-        resultado: [],
-        msg: "El parámetro 'data' debe ser un array válido.",
-      };
-    }
+// const procesarPromptControlador = async ({ data, mensaje, conversacion = [] }) => {
+//   try {
+//     if (!data || !Array.isArray(data)) {
+//       return {
+//         ok: false,
+//         tipo: "Identificacion",
+//         resultado: [],
+//         msg: "El parámetro 'data' debe ser un array válido.",
+//       };
+//     }
 
-    if (!mensaje?.trim()) {
-      return {
-        ok: false,
-        tipo: "Identificacion",
-        resultado: [],
-        msg: "El campo 'mensaje' es obligatorio.",
-      };
-    }
+//     if (!mensaje?.trim()) {
+//       return {
+//         ok: false,
+//         tipo: "Identificacion",
+//         resultado: [],
+//         msg: "El campo 'mensaje' es obligatorio.",
+//       };
+//     }
 
-    console.log("🧩 Datos para IA Control:", conversacion);
-    const respuestaIA = await identificarModeloIA({ data, mensaje, conversacion });
+//     console.log("🧩 Datos para IA Control:", conversacion);
+//     const respuestaIA = await identificarModeloIA({ data, mensaje, conversacion });
 
-    console.log("🧩 Respuesta IA Control cruda:", respuestaIA);
+//     console.log("🧩 Respuesta IA Control cruda:", respuestaIA);
 
-    return {
-      ok: respuestaIA.ok,
-      tipo: "Identificacion",
-      //coeficientes: respuestaIA.coeficientes || {},
-      conversacionid: respuestaIA.conversacion || [],
-      error: respuestaIA.error || null,
-    };
+//     return {
+//       ok: respuestaIA.ok,
+//       tipo: "Identificacion",
+//       //coeficientes: respuestaIA.coeficientes || {},
+//       conversacionid: respuestaIA.conversacion || [],
+//       error: respuestaIA.error || null,
+//     };
 
-  } catch (error) {
-    console.error("❌ Error en procesarPromptControlador:", error);
-    return {
-      ok: false,
-      tipo: "Identificacion",
-      coeficientes: {},
-      conversacionid,
-      error: error.message,
-    };
-  }
-};
+//   } catch (error) {
+//     console.error("❌ Error en procesarPromptControlador:", error);
+//     return {
+//       ok: false,
+//       tipo: "Identificacion",
+//       coeficientes: {},
+//       conversacionid,
+//       error: error.message,
+//     };
+//   }
+// };
 
 module.exports = {
   procesarPrompt,
-  procesarPromptControlador,
+  // procesarPromptControlador,
 };

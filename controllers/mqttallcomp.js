@@ -28,7 +28,7 @@ const publicarMensajeIA = async (req, res) => {
     console.log("Define el Tipo ", tipo);
     console.log("Resultado IA:", resultado);
 
-
+    
 // ======================================================
 // 🧩 CASO SQL (una o varias consultas)
 // ======================================================
@@ -113,6 +113,7 @@ if (tipo === "Sql") {
             payload = msgPLC;
           }
 
+          //console.log("Consulta Plc o SQL:",payload);
           // 🧩 Si el tópico es 'Plc/Identificacion', agregamos el campo 'orden' al mensaje
           if (topic === "Plc/Identificacion") {
             if (typeof payload === "string") {
