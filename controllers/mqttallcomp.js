@@ -1,96 +1,97 @@
-const { mqttClient, publicarMQTT, mensajesPorTopic } = require('../mqtt/conectMqtt');
-const { procesarPrompt, procesarPromptControlador } = require('./plcControllerAi');
+const {
+  mqttClient,
+  publicarMQTT,
+  mensajesPorTopic,
+} = require("../mqtt/conectMqtt");
+const {
+  procesarPrompt,
+  procesarPromptControlador,
+} = require("./plcControllerAi");
 const { dbConnection } = require("../database/config");
 // Publicar un mensaje en un topic
 const publicarMensaje = (req, res) => {
-    const { topic, mensaje } = req.body;
-    // console.log(`Publicando en ${topic}: ${mensaje}`);
-    publicarMQTT(topic, mensaje);
-    res.json({ msg: `Mensaje publicado en ${topic}` });
+  const { topic, mensaje } = req.body;
+  // console.log(`Publicando en ${topic}: ${mensaje}`);
+  publicarMQTT(topic, mensaje);
+  res.json({ msg: `Mensaje publicado en ${topic}` });
 };
-
 
 const publicarMensajeIA = async (req, res) => {
   try {
     const { mensaje } = req.body;
     const pool = await dbConnection();
-    // ✅ Validación
-    if (!mensaje?.trim()) {
-      return res.status(400).json({ error: "El campo 'mensaje' es obligatorio" });
-    }
-
+    //console.log("Mensaje petri",mensaje)
     // 🧠 Procesamiento con IA
     const { ok, conversacion, tipo, resultado } = await procesarPrompt(mensaje);
     if (!ok) {
-      return res.status(400).json({ error: "Error al procesar el prompt con IA" });
+      return res
+        .status(400)
+        .json({ error: "Error al procesar el prompt con IA" });
     }
 
     console.log("Define el Tipo ", tipo);
     console.log("Resultado IA:", resultado);
 
-    
-// ======================================================
-// 🧩 CASO SQL (una o varias consultas)
-// ======================================================
-if (tipo === "Sql") {
-  if (!Array.isArray(resultado) || resultado.length === 0) {
-    return res.status(400).json({
-      ok: false,
-      tipo: "Sql",
-      error: "No se encontró una consulta SQL válida.",
-    });
-  }
+    // ======================================================
+    // 🧩 CASO SQL (una o varias consultas)
+    // ======================================================
+    if (tipo === "Sql") {
+      if (!Array.isArray(resultado) || resultado.length === 0) {
+        return res.status(400).json({
+          ok: false,
+          tipo: "Sql",
+          error: "No se encontró una consulta SQL válida.", 
+        });
+      }
 
-  try {
+      try {
+        // Ejecutar todas las consultas en paralelo
+        const resultadosSQL = await Promise.all(
+          resultado.map(async (item) => {
+            const query = item.sql;
+            const nombre = item.prueba || "consulta";
+            if (!query) return { nombre, error: "Consulta SQL vacía" };
 
+            try {
+              const resQuery = await pool.query(query);
+              console.log(`✅ Ejecutado ${nombre}:`, query);
+              return {
+                nombre,
+                query,
+                filas: resQuery.rowCount,
+                datos: resQuery.rows || [],
+              };
+            } catch (err) {
+              console.error(`❌ Error ejecutando ${nombre}:`, err.message);
+              return {
+                nombre,
+                query,
+                error: err.message,
+                datos: [],
+              };
+            }
+          })
+        );
 
-    // Ejecutar todas las consultas en paralelo
-    const resultadosSQL = await Promise.all(
-      resultado.map(async (item) => {
-        const query = item.sql;
-        const nombre = item.prueba || "consulta";
-        if (!query) return { nombre, error: "Consulta SQL vacía" };
-
-        try {
-          const resQuery = await pool.query(query);
-          console.log(`✅ Ejecutado ${nombre}:`, query);
-          return {
-            nombre,
-            query,
-            filas: resQuery.rowCount,
-            datos: resQuery.rows || [],
-          };
-        } catch (err) {
-          console.error(`❌ Error ejecutando ${nombre}:`, err.message);
-          return {
-            nombre,
-            query,
-            error: err.message,
-            datos: [],
-          };
-        }
-      })
-    );
-
-    // Respuesta final con todos los resultados
-    return res.json({
-      ok: true,
-      tipo: "Sql",
-      conversacion,
-      resultado: {
-        totalConsultas: resultadosSQL.length,
-        resultados: resultadosSQL,
-      },
-    });
-  } catch (sqlErr) {
-    console.error("❌ Error ejecutando SQL:", sqlErr);
-    return res.status(500).json({
-      ok: false,
-      tipo: "Sql",
-      error: sqlErr.message,
-    });
-  }
-}
+        // Respuesta final con todos los resultados
+        return res.json({
+          ok: true,
+          tipo: "Sql",
+          conversacion,
+          resultado: {
+            totalConsultas: resultadosSQL.length,
+            resultados: resultadosSQL,
+          },
+        });
+      } catch (sqlErr) {
+        console.error("❌ Error ejecutando SQL:", sqlErr);
+        return res.status(500).json({
+          ok: false,
+          tipo: "Sql",
+          error: sqlErr.message,
+        });
+      }
+    }
 
     // ======================================================
     // 🧩 CASO PLC
@@ -104,38 +105,84 @@ if (tipo === "Sql") {
         });
       }
 
-        const datosNormalizados = resultado.map(({ topic, mensaje: msgPLC, orden, sql}) => {
-          let payload;
+        const datosNormalizados = resultado.map(
+          ({ topic, mensaje: msgPLC, orden, red, secuencia }) => {
+            let payload;
 
-          try {
-            payload = JSON.parse(msgPLC);
-          } catch {
-            payload = msgPLC;
-          }
-
-          //console.log("Consulta Plc o SQL:",payload);
-          // 🧩 Si el tópico es 'Plc/Identificacion', agregamos el campo 'orden' al mensaje
-          if (topic === "Plc/Identificacion") {
-            if (typeof payload === "string") {
-              // Si el mensaje es texto plano (como una consulta SQL)
-              payload = {consulta: payload, orden: orden ?? 1 };
-            } else if (typeof payload === "object" && payload !== null) {
-              // Si ya es un objeto JSON
-              payload.orden = orden ?? 1;
+            // 🔹 Intentar parsear el mensaje si es JSON
+            try {
+              payload = JSON.parse(msgPLC);
+            } catch {
+              payload = msgPLC;
             }
+
+            // 🔹 Normalización para comparación PLC
+            if (topic === "Plc/Comparacion") {
+              if (typeof payload !== "object" || payload === null) {
+                payload = {};
+              }
+
+              // Asegurar que la secuencia esté incluida correctamente
+              if (Array.isArray(secuencia)) {
+                payload.secuencia = secuencia.map((s) => ({
+                  porcentaje: Number(s.porcentaje ?? 0),
+                  duracion: Number(s.duracion ?? 0),
+                }));
+              }
+
+              // Mensaje principal de comparación
+              payload.mensaje =
+                msgPLC ||
+                "Solicitud de comparación entre modelo y planta real.";
+
+              // Valor por defecto si no hay secuencia definida
+              if (!payload.secuencia || payload.secuencia.length === 0) {
+                payload.secuencia = [{ porcentaje: 0.5, duracion: 10 }];
+              }
+
+              // (Opcional) Convertir duración a milisegundos si el PLC lo requiere
+              payload.secuencia = payload.secuencia.map((s) => ({
+                porcentaje: s.porcentaje,
+                duracion: s.duracion * 1000, // 10s → 10000 ms
+              }));
+            }
+
+            // 🔹 Normalización para red Petri
+            if (topic === "Plc/Petri") {
+              if (typeof payload !== "object" || payload === null) {
+                payload = {};
+              }
+              payload.red = red ?? payload.red;
+            }  
+
+            // 🔹 Normalización para identificación PLC
+            if (topic === "Plc/Identificacion") {
+              if (typeof payload === "string") {
+                payload = { consulta: payload, orden: orden ?? 1 };
+              } else if (typeof payload === "object" && payload !== null) {
+                payload.orden = orden ?? 1;
+              }
+            }
+
+            console.log(`Procesado para topic ${topic}:`, payload);
+
+            // 📡 Publicación MQTT
+            if (topic && payload) {
+              mqttClient.publish(
+                topic,
+                JSON.stringify(payload),
+                { qos: 1 },
+                (err) => {
+                  if (err)
+                    console.error(`❌ Error publicando en ${topic}:`, err.message);
+                  else console.log(`📡 Publicado en ${topic}:`, payload);
+                }
+              );
+            }
+
+            return { topic, mensaje: payload };
           }
-
-          // 📡 Publicación MQTT
-          if (topic && msgPLC) {
-            mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 }, (err) => {
-              if (err) console.error(`❌ Error publicando en ${topic}:`, err.message);
-              else console.log(`📡 Publicado en ${topic}:`, payload);
-            });
-          }
-
-          return { topic, mensaje: payload };
-        });
-
+        );
 
       return res.json({
         ok: true,
@@ -162,7 +209,6 @@ if (tipo === "Sql") {
         resumen: { nota: "Tipo de mensaje no reconocido" },
       },
     });
-
   } catch (error) {
     console.error("❌ Error en publicarMensajeIA:", error);
     if (!res.headersSent) {
@@ -175,43 +221,49 @@ if (tipo === "Sql") {
   }
 };
 
-
 // Suscribirse a un nuevo topic dinámicamente
 const suscribirseTopic = (req, res) => {
-    const { topic } = req.body;
-    mqttClient.subscribe(topic, { qos: 1 }, (err) => {
-        if (err) return res.status(500).json({ msg: `Error suscribiéndose a ${topic}`, err });
-        // Inicializar buffer si no existe
-        if (!mensajesPorTopic[topic]) mensajesPorTopic[topic] = [];
-        res.json({ msg: `Suscrito a ${topic}` });
-    });
+  const { topic } = req.body;
+  mqttClient.subscribe(topic, { qos: 1 }, (err) => {
+    if (err)
+      return res
+        .status(500)
+        .json({ msg: `Error suscribiéndose a ${topic}`, err });
+    // Inicializar buffer si no existe
+    if (!mensajesPorTopic[topic]) mensajesPorTopic[topic] = [];
+    res.json({ msg: `Suscrito a ${topic}` });
+  });
 };
 
 // Obtener lista de topics y últimos mensajes
 const obtenerTopics = (req, res) => {
-    if (!mqttClient) return res.status(500).json({ msg: 'Cliente MQTT no inicializado' });
-    res.json({ 
-        clientId: mqttClient.options.clientId, 
-        topics: Object.keys(mensajesPorTopic),
-        ultimosMensajes: mensajesPorTopic
-    });
+  if (!mqttClient)
+    return res.status(500).json({ msg: "Cliente MQTT no inicializado" });
+  res.json({
+    clientId: mqttClient.options.clientId,
+    topics: Object.keys(mensajesPorTopic),
+    ultimosMensajes: mensajesPorTopic,
+  });
 };
 
 // Leer los últimos mensajes de un topic específico
 const leerMensajes = (req, res) => {
-    const { topic } = req.params;
-    if (!topic) return res.status(400).json({ msg: 'Debes enviar un topic' });
+  const { topic } = req.params;
+  if (!topic) return res.status(400).json({ msg: "Debes enviar un topic" });
 
-    const mensajes = mensajesPorTopic[topic] || [];
-    if (mensajes.length === 0) return res.status(404).json({ msg: 'No hay mensajes para este topic o no existe' });
+  const mensajes = mensajesPorTopic[topic] || [];
+  if (mensajes.length === 0)
+    return res
+      .status(404)
+      .json({ msg: "No hay mensajes para este topic o no existe" });
 
-    res.json({ topic, mensajes });
+  res.json({ topic, mensajes });
 };
 
 module.exports = {
-    publicarMensaje,
-    publicarMensajeIA,
-    suscribirseTopic,
-    obtenerTopics,
-    leerMensajes
+  publicarMensaje,
+  publicarMensajeIA,
+  suscribirseTopic,
+  obtenerTopics,
+  leerMensajes,
 };

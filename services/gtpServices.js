@@ -15,19 +15,81 @@ let historialConversacion = [];
  */
 const gtpServiceUniversal = async (prompt) => {
   try {
-    if (!prompt || typeof prompt !== "string") {
+    if (!prompt || typeof prompt.text !== "string") {
       return {
         tipo: "Error",
-        conversacion: "El campo 'prompt' debe ser una cadena de texto válida.",
+        conversacion: "El campo 'text' debe ser una cadena de texto válida.",
         resultado: [{ topic: "Plc/Error", mensaje: "" }],
       };
     }
 
-    const promptLower = prompt.toLowerCase();
+    const promptLower = prompt.text.toLowerCase();
 
     // 🧩 1. Detección de intención
     const esIdentificacion = /\b(identifica|identificación|modelo\s*de\s*la\s*planta|identificar\s*modelo|determina\s*modelo)\b/.test(promptLower);
+    const esPetri = /\b(petri|red\s*de\s*petri|transiciones|plaza|token|simulación\s*petri)\b/.test(promptLower);
+    const esComparacion = /\b(compara(r)?\s*(el\s*)?modelo|comparación\s*de\s*modelo|comparar\s*modelo)\b/.test(promptLower);
 
+
+
+    // ⚡ Si detecta instrucción compuesta
+    if (esCicloCompleto) {
+      return {
+        tipo: "Plc",
+        conversacion:
+          "Se detectó una instrucción de ciclo completo: caracterización, identificación y control de la planta. Se ejecutará el proceso integral de IA.",
+        resultado: [
+          {
+            topic: "Plc/ControlIA",
+            mensaje: prompt.text, // el prompt completo como payload
+          },
+        ],
+      };
+    }
+
+    // ⚡ Si detecta algo sobre Petri, devolvemos respuesta directa
+    if (esPetri) {
+      return {
+        tipo: "Plc",
+        conversacion: "Se detectó una instrucción relacionada con redes de Petri. Enviando payload al PLC.",
+        resultado: [
+          {
+            topic: "Plc/Petri",
+            mensaje: "Ejecución y análisis de red de Petri solicitado.",
+            red: prompt.file || null,
+          },
+        ],
+      };
+    }
+
+    // ⚡ Si detecta algo sobre comparación de modelos
+    if (esComparacion) {
+      const regexSecuencia = /(\d+(?:\.\d+)?)%\s*(?:durante|por|,|\s)(\d+(?:\.\d+)?)\s*(?:s|segundos?)/gi;
+      const secuencia = [];
+      let match;
+      while ((match = regexSecuencia.exec(promptLower)) !== null) {
+        const porcentaje = parseFloat(match[1]) / 100;
+        const duracion = parseFloat(match[2]);
+        secuencia.push({ porcentaje, duracion });
+      }
+
+      return {
+        tipo: "Plc",
+        conversacion:
+          "Se detectó una solicitud de comparación de modelos. Se ejecutará la planta real con los rangos definidos para comparar con el modelo identificado.",
+        resultado: [
+          {
+            topic: "Plc/Comparacion",
+            mensaje: "Solicitud de comparación entre modelo y planta real.",
+            secuencia: secuencia.length
+              ? secuencia
+              : [{ porcentaje: 0.5, duracion: 10 }], // valor por defecto
+          },
+        ],
+      };
+    }
+
+    // 🧩 2. Detección SQL vs PLC (si no era Petri o ciclo completo)
     const esSQL = (() => {
       if (esIdentificacion) return true;
 
@@ -42,7 +104,7 @@ const gtpServiceUniversal = async (prompt) => {
       return esConsulta && !esComandoPLC;
     })();
 
-    // 🧠 2. Prompt del sistema (lo que tú mencionaste)
+    // 🧠 3. Prompt del sistema
     const systemPrompt = `
 {
   "modo": "inteligente",
@@ -80,32 +142,33 @@ const gtpServiceUniversal = async (prompt) => {
     "reglas": [
       "Si contiene 'canal', 'adc' o 'lee', usa topic = 'Plc/Adc'.",
       "Si contiene 'salida' o 'Q', usa topic = 'Plc/Ia'.",
-      "Si contiene 'control', 'planta' o 'simulación', usa topic = 'Plc/Control'.",
+      "Si contiene 'control', 'planta' o 'simulación', usa topic = 'Plc/Control'",
       "Si contiene 'informe' o 'reporte', usa topic = 'Plc/Supervisor'.",
       "Si contiene 'caracterizacion' o 'llevar', usa topic = 'Plc/Caracterizacion'",
-      "Si contiene 'identifica' o 'modelo', usa topic = 'Plc/Identificacion'.",
+      "Si contiene 'identifica' o 'modelo', usa topic = 'Plc/Identificacion'",
+      "Si contiene 'compara el modelo', usa topic = 'Plc/Comparacion'",
       "Si no se reconoce el tipo, usa topic = 'Plc/Otros'."
     ]
   }
 }
 `;
 
-    // 🧩 3. Construir mensajes con historial
+    // 🧩 4. Construir mensajes con historial
     const mensajes = [
       { role: "system", content: systemPrompt },
       ...historialConversacion,
-      { role: "user", content: prompt },
+      { role: "user", content: prompt.text },
     ];
 
-    // 🚀 4. Llamada al modelo
+    // 🚀 5. Llamada al modelo solo si NO es Petri o ciclo completo
     const completion = await client.chat.completions.create({
       model: "gpt-4.1",
       messages: mensajes,
       temperature: 0.3,
-      max_tokens: 500,
+      max_tokens: 200,
     });
 
-    // 🧹 5. Validar salida
+    // 🧹 6. Validar salida
     let content = completion.choices[0]?.message?.content?.trim() || "";
     if (content.startsWith("```")) content = content.replace(/```(json)?/g, "").trim();
 
@@ -113,33 +176,23 @@ const gtpServiceUniversal = async (prompt) => {
     try {
       json = JSON.parse(content);
     } catch {
-      console.warn("⚠️ GPT no devolvió JSON válido. Aplicando estructura fallback.");
       json = esSQL
         ? { conversacion: "No se pudo generar una consulta SQL válida.", resultado: [{ sql: "", prueba: "desconocida" }] }
-        : { conversacion: "No se pudo interpretar la instrucción para el PLC.", resultado: [{ topic: "Plc/Otros", mensaje: prompt }] };
-    }
-
-    // 🧩 6. Detección de parámetros
-    let orden = 1;
-    const matchOrden = promptLower.match(/\borden\s*(\d+)/);
-    if (matchOrden) orden = Math.max(parseInt(matchOrden[1]) || 1, 1);
-
-    let idCaracterizacion = null;
-    const matchId = promptLower.match(/\bid\s*(\d+)\b/);
-    if (matchId) idCaracterizacion = parseInt(matchId[1]);
-
-    let numeroExplicito = null;
-    const matchNumero = promptLower.match(/\b(número|numero)\s*(\d+)\b/);
-    if (matchNumero) numeroExplicito = parseInt(matchNumero[2]);
-
-    let indiceCaracterizacion = 1;
-    const matchIndice = promptLower.match(/\b(primer[ao]|segund[ao]|tercer[ao]|cuart[ao]|quint[ao]|sext[ao]|séptim[ao]|octav[ao]|noven[ao]|décim[ao])\b/);
-    if (matchIndice) {
-      const mapa = { primero:1, segunda:2, tercero:3, cuarta:4, quinta:5, sexta:6, séptima:7, septima:7, octava:8, novena:9, décima:10, decima:10 };
-      indiceCaracterizacion = mapa[matchIndice[0]] || 1;
+        : { conversacion: "No se pudo interpretar la instrucción para el PLC.", resultado: [{ topic: "Plc/Otros", mensaje: prompt.text }] };
     }
 
     // 🔖 7. Respuesta PLC de identificación
+    const matchOrden = promptLower.match(/orden\s*(\d+)/);
+    const ordenDetectado = matchOrden ? parseInt(matchOrden[1]) : 1;
+
+    const matchId = promptLower.match(/\b(?:id|caracterizacion|caracterización)\s*(\d+)/);
+    const idDetectado = matchId ? parseInt(matchId[1]) : null;
+
+    const orden = prompt.orden || ordenDetectado || 1;
+    const idCaracterizacion = prompt.idCaracterizacion || idDetectado || null;
+    const numeroExplicito = prompt.numeroExplicito || idDetectado || null;
+    const indiceCaracterizacion = prompt.indiceCaracterizacion || (idDetectado ? idDetectado : 1);
+
     if (esIdentificacion) {
       json.tipo = "Plc";
       let sqlQuery;
@@ -153,19 +206,25 @@ const gtpServiceUniversal = async (prompt) => {
       }
 
       json.resultado = [
-        { topic: "Plc/Identificacion", mensaje: sqlQuery, orden, id: idCaracterizacion || numeroExplicito || null }
+        {
+          topic: "Plc/Identificacion",
+          mensaje: sqlQuery,
+          orden,
+          id: idCaracterizacion || numeroExplicito || null,
+        },
       ];
 
-      json.conversacion =
-        idCaracterizacion || numeroExplicito
-          ? `Identificando la planta con la caracterización de id ${idCaracterizacion || numeroExplicito} (modelo de orden ${orden}).`
-          : `Identificando la planta con la ${indiceCaracterizacion}ª caracterización registrada (modelo de orden ${orden}).`;
+      if (idCaracterizacion || numeroExplicito) {
+        json.conversacion = `Identificando la planta con la ${idCaracterizacion}ª caracterización registrada (modelo de orden ${orden}). Se procederá con la lectura del registro de id ${idCaracterizacion}.`;
+      } else {
+        json.conversacion = `Identificando la planta con la ${indiceCaracterizacion}ª caracterización registrada (modelo de orden ${orden}). Se procederá con la lectura del primer registro disponible.`;
+      }
     } else {
       json.tipo = esSQL ? "Sql" : "Plc";
     }
 
     // 🧩 8. Actualizar historial
-    historialConversacion.push({ role: "user", content: prompt });
+    historialConversacion.push({ role: "user", content: prompt.text });
     historialConversacion.push({ role: "assistant", content: JSON.stringify(json) });
     if (historialConversacion.length > 10) historialConversacion = historialConversacion.slice(-10);
 
@@ -175,7 +234,7 @@ const gtpServiceUniversal = async (prompt) => {
     return {
       tipo: "Error",
       conversacion: "Ocurrió un error interno al procesar el prompt. Intenta de nuevo más tarde.",
-      resultado: [{ topic: "Plc/Error", mensaje: prompt }],
+      resultado: [{ topic: "Plc/Error", mensaje: prompt.text }],
     };
   }
 };

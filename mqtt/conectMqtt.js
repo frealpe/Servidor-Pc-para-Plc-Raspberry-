@@ -17,12 +17,15 @@ const mqttClient = mqtt.connect(brokerUrl, options);
 const topics = [
   'Plc/Adc',
   'Plc/Ia',
-  'Plc/Pwm',
+  'Plc/Pwm', 
   'Plc/Timer',
   'Plc/Control',
   'Plc/Caracterizacion',
   'Plc/Supervisor', 
-  'Plc/Respuesta'
+  'Plc/Respuesta',
+  'Plc/Petri',
+  'Plc/Comparacion',
+  'Plc/ControlIA',
 ];
 
 // Buffer para los últimos N mensajes

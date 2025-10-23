@@ -7,53 +7,90 @@ const { identificarModeloIA } = require('../services/gtpServicesControl');
  */
 const procesarPrompt = async (prompt) => {
   try {
-    if (!prompt?.trim()) {
+    // 🔹 Validación del texto
+    if (!prompt?.text || typeof prompt.text !== 'string' || !prompt.text.trim()) {
       return {
-        ok: false,
-        tipo: "Error",
-        resultado: [],
-        msg: "El campo 'prompt' es obligatorio.",
+        tipo: 'Error',
+        conversacion: "El campo 'prompt' debe ser una cadena de texto válida.",
+        resultado: [{ topic: 'Plc/Error', mensaje: '' }]
       };
     }
 
-    // 🚀 Llamada al servicio GPT universal
-    const respuestaIA = await gtpServiceUniversal(prompt);
-    console.log("🧠 Respuesta IA cruda:", respuestaIA);
+    const textoLimpio = prompt.text.trim();
+    console.log("🧠 Procesando prompt:", textoLimpio);
+
+    // 🔹 Verificar si llegó un archivo
+    if (prompt.file) {
+      console.log("📄 Archivo recibido:", prompt.file);
+      // Aquí podrías procesar el archivo PNML/XML si aplica.
+      // const datosArchivo = procesarArchivoPNML(prompt.file);
+    }
+
+    // 🚀 Llamada al servicio GPT
+    let respuestaIA = await gtpServiceUniversal({
+      text: textoLimpio,
+      file: prompt.file || null,
+    });
+
+    // 🧹 Limpieza preventiva para evitar estructuras circulares
+    if (respuestaIA?.resultado) {
+      respuestaIA.resultado = respuestaIA.resultado.map((r) => {
+        const { mensaje, ...resto } = r;
+        return {
+          ...resto,
+          mensaje:
+            typeof mensaje === 'string'
+              ? mensaje
+              : (() => {
+                  try {
+                    return JSON.stringify(mensaje);
+                  } catch {
+                    return '[Objeto no serializable]';
+                  }
+                })(),
+        };
+      });
+    }
+
+    // 🧩 Clonado seguro (rompe referencias circulares)
+    const respuestaIALimpia = JSON.parse(JSON.stringify(respuestaIA));
+
+    console.log("🧠 Respuesta IA cruda:", respuestaIALimpia);
 
     const salida = {
       ok: true,
-      tipo: respuestaIA.tipo || "Desconocido",
-      conversacion: respuestaIA.conversacion || [], 
+      tipo: respuestaIALimpia.tipo || "Desconocido",
+      conversacion: respuestaIALimpia.conversacion || [],
     };
 
-    // ⚙️ Caso 2: SQL detectado
-    if (respuestaIA.tipo === "Sql") {
+    // ⚙️ Caso 1: SQL detectado
+    if (respuestaIALimpia.tipo === "Sql") {
       const resultado =
-        Array.isArray(respuestaIA.resultado) && respuestaIA.resultado.length > 0
-          ? respuestaIA.resultado
-          : respuestaIA.sql
-          ? [{ sql: respuestaIA.sql }]
+        Array.isArray(respuestaIALimpia.resultado) && respuestaIALimpia.resultado.length > 0
+          ? respuestaIALimpia.resultado
+          : respuestaIALimpia.sql
+          ? [{ sql: respuestaIALimpia.sql }]
           : [];
 
       return {
-        ...salida, 
+        ...salida,
         tipo: "Sql",
         resultado,
         msg: "Consulta SQL detectada correctamente.",
       };
     }
 
-    // ⚙️ Caso 3: Comandos PLC detectados
-    if (Array.isArray(respuestaIA.resultado) && respuestaIA.resultado.length > 0) {
+    // ⚙️ Caso 2: Comandos PLC detectados
+    if (Array.isArray(respuestaIALimpia.resultado) && respuestaIALimpia.resultado.length > 0) {
       return {
         ...salida,
         tipo: "Plc",
-        resultado: respuestaIA.resultado,
+        resultado: respuestaIALimpia.resultado,
         msg: "Comandos PLC detectados correctamente.",
       };
     }
 
-    // ⚙️ Caso 4: Desconocido
+    // ⚙️ Caso 3: Desconocido
     return {
       ...salida,
       tipo: "Desconocido",
@@ -75,6 +112,7 @@ const procesarPrompt = async (prompt) => {
 
 /**
  * 🤖 Procesa el prompt para controladores (IA Control)
+ * (Actualmente desactivado, pero se deja plantilla para uso futuro)
  */
 // const procesarPromptControlador = async ({ data, mensaje, conversacion = [] }) => {
 //   try {
@@ -104,7 +142,6 @@ const procesarPrompt = async (prompt) => {
 //     return {
 //       ok: respuestaIA.ok,
 //       tipo: "Identificacion",
-//       //coeficientes: respuestaIA.coeficientes || {},
 //       conversacionid: respuestaIA.conversacion || [],
 //       error: respuestaIA.error || null,
 //     };
@@ -114,8 +151,7 @@ const procesarPrompt = async (prompt) => {
 //     return {
 //       ok: false,
 //       tipo: "Identificacion",
-//       coeficientes: {},
-//       conversacionid,
+//       conversacionid: [],
 //       error: error.message,
 //     };
 //   }
