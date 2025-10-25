@@ -5,7 +5,6 @@ const {
 } = require("../mqtt/conectMqtt");
 const {
   procesarPrompt,
-  procesarPromptControlador,
 } = require("./plcControllerAi");
 const { dbConnection } = require("../database/config");
 // Publicar un mensaje en un topic

@@ -53,12 +53,6 @@ mqttClient.on('message', (topic, message) => {
   if (mensajesPorTopic[topic].length > MAX_MENSAJES) {
     mensajesPorTopic[topic].shift();
   }
-
-  // 👇 Manejo especial para Plc/Respuesta
-  // if (topic === 'Plc/Respuesta') {
-  //   console.log('✅ Respuesta capturada:', msg);
-  //   // aquí tu lógica extra (guardar DB, WebSocket, etc.)
-  // }
 });
 
 mqttClient.on('error', (err) => {
